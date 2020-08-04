@@ -1,0 +1,290 @@
+---
+title: "One trillion trees analysis"
+author: "Matt Russell"
+date: "8/4/2020"
+output: html_document
+---
+
+# Import and prep the data
+
+Load the packages:
+
+```{r}
+library(googlesheets4)
+library(tidyverse)
+library(quantreg)
+```
+
+Read in the data:
+
+```{r}
+tree <- read_sheet("https://docs.google.com/spreadsheets/d/16kqmkcDnHI7OnyvSL72iX5BxdWAchsPZMS-CA5Ek3Yk/edit?usp=sharing")
+
+# Remove AK and HI 
+tree <- tree %>% 
+  filter(!state %in% c("AK", "HI"))
+
+state <- read_sheet("https://docs.google.com/spreadsheets/d/1fnquIcYugmQfIZNhe2Wgeih03jfXZZOR-A9Tw2i3EwE/edit?usp=sharing")
+# Remove AK and HI 
+
+state <- state %>% 
+  filter(!state %in% c("AK", "HI"))
+```
+
+Calculate how many trees across US, in each diameter class, and in each US state:
+
+```{r}
+tree %>% 
+  summarize(num_trees_total_us = sum(n_trees))
+
+tree %>% 
+  group_by(size) %>% 
+  summarize(num_trees_total_us = sum(n_trees))
+
+tree.summ <- tree %>% 
+  group_by(state) %>% 
+  summarize(num_trees_total = sum(n_trees))
+tree.summ
+```
+
+Merge tree and state and calculate per-hectare values:
+
+```{r}
+state <- state %>% 
+  mutate(prop_forest = forest_area_ac/total_area_ac)
+
+tree <- tree %>% 
+  inner_join(state) %>% 
+  mutate(forest_area_ha = forest_area_ac * 0.404686,
+         forest_area_ha_MM = (forest_area_ac * 0.404686) / 1000,
+         num_trees_total_MMM = n_trees  / 1000000)
+
+tree.summ <- tree.summ %>% 
+  inner_join(state) %>% 
+  mutate(forest_area_ha = forest_area_ac * 0.404686,
+         forest_area_ha_MM = (forest_area_ac * 0.404686) / 1000,
+         num_trees_total_MMM = num_trees_total / 1000000000)
+
+```
+
+Make graph of quantile regression lines:
+
+```{r}
+p.trees <- ggplot(tree.summ, aes(forest_area_ha_MM, num_trees_total_MMM)) +
+  geom_point() +
+#  stat_smooth(method = "lm", col = "red", se=F)+
+  geom_quantile(quantiles = c(0.5, 0.79, 0.99)) +
+  labs(x = "Forest land in US state (million hectares)",
+       y = "Trees (billions)") +
+  annotate("text", x = 13.5, y = 13, label = "Quantile = 0.50")+
+  annotate("text", x = 13.5, y = 55, label = "Quantile = 0.99")+
+  annotate("text", x = 13.5, y = 30, label = "Quantile = 0.79")+
+  theme(panel.background = element_rect(fill = "NA"),
+        axis.line = element_line(color = "black"),
+        axis.text = element_text(color = "black"))
+
+p.trees
+```
+
+```{r, eval = F}
+ggsave(filename = "Fig1.pdf", plot = p.trees, width = 5, height = 3, 
+       units = "in", scale = 1)
+```
+
+Model bumber of trees at different quantiles:
+
+```{r}
+# Simple linear regression
+
+lm.all <- lm(num_trees_total_MMM ~ forest_area_ha_MM, data = tree.summ)
+summary(lm.all)
+
+# Quantile regression at 99th quantile
+qr.all <- rq(num_trees_total_MMM ~ forest_area_ha_MM, data = tree.summ, tau = c(0.5, 0.99))
+qr.all
+
+tree.summ <- tree.summ %>% 
+  mutate(num_trees_total_99 = -0.2315100 + (3.3475 * forest_area_ha_MM))
+
+tree.summ %>% 
+  summarize(num_trees_total_us = sum(num_trees_total_MMM),
+            num_trees_total_99_us = sum(num_trees_total_99))
+
+# Search for quantile that gives the US 76 billion more trees (431 total trees)
+# Quantile regression at 79th quantile
+qr.all <- rq(num_trees_total_MMM ~ forest_area_ha_MM, data = tree.summ, tau = c(0.79))
+qr.all
+
+tree.summ <- tree.summ %>% 
+  mutate(num_trees_total_79 = -0.10225 + (1.72964 * forest_area_ha_MM))
+
+tree.summ %>% 
+  summarize(num_trees_total_us = sum(num_trees_total_MMM),
+            num_trees_total_79_us = sum(num_trees_total_79))
+
+# Quantile regression at 50th quantile
+qr.all <- rq(num_trees_total_MMM ~ forest_area_ha_MM, data = tree.summ, tau = c(0.50))
+qr.all
+
+tree.summ <- tree.summ %>% 
+  mutate(num_trees_total_50 = -0.10225 + (1.72964 * forest_area_ha_MM))
+
+tree.summ %>% 
+  summarize(num_trees_total_us = sum(num_trees_total_MMM),
+            num_trees_total_50_us = sum(num_trees_total_50))
+
+# By size class
+
+# Quantile regression at 99th quantile - saplings
+tree.sap <- tree %>% 
+  filter(size == "Sapling")
+
+qr.sap <- rq(num_trees_total_MMM ~ forest_area_ha_MM, data = tree.sap, tau = c(0.99))
+qr.sap
+summary(qr.sap)
+
+tree.sap <- tree.sap %>% 
+  mutate(num_sap_total_99 = -225.2588 + (2876.787 * forest_area_ha_MM))
+
+tree.sap %>% 
+  summarize(num_sap_total_us = sum(num_trees_total_MMM),
+            num_sap_total_99_us = sum(num_sap_total_99))
+
+# Quantile regression at 79th quantile - saplings
+qr.sap <- rq(num_trees_total_MMM ~ forest_area_ha_MM, data = tree.sap, tau = c(0.79))
+qr.sap
+summary(qr.sap)
+
+tree.sap <- tree.sap %>% 
+  mutate(num_sap_total_79 = -101.5835 + (1306.3957 * forest_area_ha_MM))
+
+tree.sap %>% 
+  summarize(num_sap_total_us = sum(num_trees_total_MMM),
+            num_sap_total_79_us = sum(num_sap_total_79))
+
+# Quantile regression at 99th quantile - poletimber
+tree.pole <- tree %>% 
+  filter(size == "Poletimber")
+
+qr.pole <- rq(num_trees_total_MMM ~ forest_area_ha_MM, data = tree.pole, tau = c(0.99))
+qr.pole
+summary(qr.pole)
+
+tree.pole <- tree.pole %>% 
+  mutate(num_pole_total_99 = -12.22 + (364.28 * forest_area_ha_MM))
+
+tree.pole %>% 
+  summarize(num_pole_total_us = sum(num_trees_total_MMM),
+            num_pole_total_99_us = sum(num_pole_total_99))
+
+# Quantile regression at 79th quantile - poletimber
+qr.pole <- rq(num_trees_total_MMM ~ forest_area_ha_MM, data = tree.pole, tau = c(0.79))
+qr.pole
+summary(qr.pole)
+
+tree.pole <- tree.pole %>% 
+  mutate(num_pole_total_79 = -1.00285 + (276.37782 * forest_area_ha_MM))
+
+tree.pole %>% 
+  summarize(num_pole_total_us = sum(num_trees_total_MMM),
+            num_pole_total_79_us = sum(num_pole_total_79))
+
+# Quantile regression at 99th quantile - sawtimber
+tree.saw <- tree %>% 
+  filter(size == "Sawtimber")
+
+qr.saw <- rq(num_trees_total_MMM ~ forest_area_ha_MM, data = tree.saw, tau = c(0.99))
+qr.saw
+summary(qr.saw)
+
+tree.saw <- tree.saw %>% 
+  mutate(num_saw_total_99 = -6.79 + (193.814 * forest_area_ha_MM))
+
+tree.saw %>% 
+  summarize(num_saw_total_us = sum(num_trees_total_MMM),
+            num_saw_total_99_us = sum(num_saw_total_99))
+
+# Quantile regression at 79th quantile - sawtimber
+qr.saw <- rq(num_trees_total_MMM ~ forest_area_ha_MM, data = tree.saw, tau = c(0.79))
+qr.saw
+summary(qr.saw)
+
+tree.saw <- tree.saw %>% 
+  mutate(num_saw_total_79 = 6.46502 + (142.26666 * forest_area_ha_MM))
+
+tree.saw %>% 
+  summarize(num_saw_total_us = sum(num_trees_total_MMM),
+            num_saw_total_79_us = sum(num_saw_total_79))
+```
+
+
+
+```{r}
+dist <- tribble(
+  ~`Size class`, ~`Time`, ~`Billion trees`,
+  "Saplings", "Current day", 261,
+  "Poletimber", "Current day", 61,
+  "Sawtimber", "Current day", 32,
+  "Saplings", "Quantile = 0.79", 331,
+  "Poletimber", "Quantile = 0.79", 71,
+  "Sawtimber", "Quantile = 0.79", 36,
+  "Saplings", "Quantile = 0.99", 729,
+  "Poletimber", "Quantile = 0.99", 93,
+  "Sawtimber", "Quantile = 0.99", 49
+)
+
+p.trees.size2 <- ggplot(dist, aes(reorder(`Size class`, -`Billion trees`), `Billion trees`, fill = factor(`Time`))) +
+  geom_bar(stat = "identity", position = "dodge2", col = "black") +
+  labs(x = "Tree size",
+       y = "Trees (billions)") +
+  scale_fill_brewer(palette="Dark2") +
+  theme(panel.background = element_rect(fill = "NA"),
+        axis.line = element_line(color = "black"),
+        axis.text = element_text(color = "black"),
+        legend.position = c(0.75, 0.75),
+        legend.title = element_blank())
+
+p.trees.size2
+```
+
+```{r, eval = F}
+ggsave("Fig2.pdf", plot = p.trees.size2, width = 5, height = 3, 
+       units = "in", scale = 1)
+```
+
+Enter data on country land area. Data from [Food and Agriculture Organization of the United Nations](http://www.fao.org/faostat/en/#home) 
+
+```{r}
+# Enter data
+
+country <- tribble(
+~Country, ~Forestland,
+"Russian Federation", 815,
+"Brazil", 494,
+"Canada", 347,
+"United States of America", 310,
+"China", 208,
+"Democratic Republic of the Congo", 153,
+"Australia", 125,
+"Indonesia", 91,
+"Peru", 74,
+"India", 71,
+"Mexico", 66,
+"Colombia", 59,
+"Angola", 58,
+"Bolivia", 55,
+"Zambia", 49,
+"All other countries", 1080
+)
+
+country %>% 
+  mutate(Total_area = sum(Forestland))
+
+country2 <- country %>% 
+ mutate(Forestland_pct=Forestland/sum(Forestland))
+
+country2 
+```
+
+
+
