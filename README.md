@@ -1,5 +1,7 @@
-# R4DS
-Files as I work through the R for Data Science book by Wickham and Grolemund.  
+# 1tTrees
+Files and data sources for an analysis about one trillion trees  
+
+Script is in an R Mardown format. Datasets include the following stored in Google Sheets:
   
-**Textbook**: https://r4ds.had.co.nz/  
-**Soultions** from Jeffrey B. Arnold which have been helpful: https://jrnold.github.io/r4ds-exercise-solutions/index.html  
+*[Tree dataset](https://docs.google.com/spreadsheets/d/16kqmkcDnHI7OnyvSL72iX5BxdWAchsPZMS-CA5Ek3Yk/edit?usp=sharing) contains number of trees in sawtimber, poletimber, and sapling classes by state. 
+*[State dataset](https://docs.google.com/spreadsheets/d/1fnquIcYugmQfIZNhe2Wgeih03jfXZZOR-A9Tw2i3EwE/edit?usp=sharing) includes total forest area in each US state.
